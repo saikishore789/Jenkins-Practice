@@ -1,0 +1,61 @@
+properties([
+    parameters([
+        string(
+            defaultValue: 'dev', 
+            name: 'Environment'
+            ), 
+            choice(
+                choices: ['plan', 'apply', 'destroy'], 
+                name: 'Terraform_Action'
+                )])
+])
+
+pipeline {
+    agent any 
+    stages {
+        stage('settingup') {
+            steps {
+                sh 'echo preparing'
+            }
+        }
+        
+        stage('checkout') {
+            steps {
+                checkout changelog: false, poll: false, scm: scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/saikishore789/EKS-Terraform-GitHub-Actions.git']])
+            }
+        }
+        
+        stage('validate') {
+            steps {
+                withAWS(credentials: 'aws_cred', region: 'ap-south-1') {
+                    sh 'terraform -chdir=eks/ init'
+                }
+            }
+        }
+        
+        stage('plan') {
+            steps {
+                withAWS(credentials: 'aws_cred', region: 'ap-south-1') {
+                    sh 'terraform -chdir=eks/ plan'
+                }
+            }
+        }
+        
+        stage('action') {
+            steps {
+                withAWS(credentials: 'aws_cred', region: 'ap-south-1') {
+                    script {    
+                        if (params.Terraform_Action == 'plan') {
+                            sh "terraform -chdir=eks/ plan -var-file=${params.Environment}.tfvars"
+                        }   else if (params.Terraform_Action == 'apply') {
+                            sh "terraform -chdir=eks/ apply -var-file=${params.Environment}.tfvars -auto-approve"
+                        }   else if (params.Terraform_Action == 'destroy') {
+                            sh "terraform -chdir=eks/ destroy -var-file=${params.Environment}.tfvars -auto-approve"
+                        } else {
+                            error "Invalid value for Terraform_Action: ${params.Terraform_Action}"
+                        }
+                }
+            }
+        }
+    }
+}
